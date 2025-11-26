@@ -78,26 +78,10 @@
 #include <assert.h> /* Verify assumptions with assert */
 #include <unistd.h> /* UNIX standard function */
 #include <time.h> /* Time functions for random seed */
+#include "upecman.h" /* Inclui o header com o mapa e definicoes */
 
 /* ---------------------------------------------------------------------- */
 /* definitions */
-
-#ifndef VERSION
-#define VERSION "20160529.013231" /**< Version Number */
-#endif
-
-/* Debug */
-#ifndef DEBUG /* gcc -DDEBUG=1 */
-#define DEBUG 0 /**< Activate/deactivate debug mode */
-#endif
-
-/** @brief Debug message if DEBUG on */
-#define IFDEBUG(M) if(DEBUG) fprintf(stderr, "[DEBUG file:%s line:%d]: " M "\n", __FILE__, __LINE__); else {;}
-
-/* limits */
-#define SBUFF 256 /**< String buffer */
-#define LABL 23 /**< Number of lines in labyrinth */
-#define LABC 21 /**< Number of columns in labyrinth */
 
 #define PONTOS_PELOTA 10
 #define PONTOS_PILULA 50
@@ -108,71 +92,9 @@
 /* ---------------------------------------------------------------------- */
 /* globals */
 
-static int verb = 0; /**< verbose level, global within the file */
 static int start_y = 0; /**< starting y position for centering */
 static int start_x = 0; /**< starting x position for centering */
-
-const char labmodel[LABL][LABC] =
-{
-    /*01234567890123456789*/
-    {"####################"},    /* 0*/
-    {"#........##........#"},    /* 1*/
-    {"#o##.###.##.###.##o#"},    /* 2*/
-    {"#..................#"},    /* 3*/
-    {"#.##.#.######.#.##.#"},    /* 4*/
-    {"#....#...##...#....#"},    /* 5*/
-    {"####.###.##.###.####"},    /* 6*/
-    {"   #.#......#.#   "},      /* 7*/
-    {"   #.#.##  ##.#   "},      /* 8*/
-    {"####.#.#    #.#.####"},    /* 9*/
-    {"    ...#    #...    "},    /*10*/
-    {"####.#.#    #.#.####"},    /*11*/
-    {"   #.#.######.#.#   "},    /*12*/
-    {"   #.#........#.#   "},    /*13*/
-    {"####.#.######.#.####"},    /*14*/
-    {"#........##........#"},    /*15*/
-    {"#o##.###.##.###.##o#"},    /*16*/
-    {"#..................#"},    /*17*/
-    {"##.#.#.######.#.#.##"},    /*18*/
-    {"#....#...##...#....#"},    /*19*/
-    {"#.######.##.######.#"},    /*20*/
-    {"#..................#"},    /*21*/
-    {"####################"}     /*22*/
-};
-
-typedef enum e_ghostmode {chase, scatter, afraid, dead} t_ghostmode;
-typedef enum e_direction {up, left, down, right} t_direction;
-typedef enum e_ghosts {blinky, pinky, inky, clyde} t_ghosts;
-
-typedef struct st_position
-{
-    int y; /* line */
-    int x; /* column */
-} t_pos;
-
-typedef struct st_pacman
-{
-    t_pos pos; /* current pacman position */
-    t_direction dir; /* direction */
-    int life; /* how many lifes pacman has */
-    int score; /* dot = 10 point; pill = 50 points; ghost = 750 points; cherry = 500 */
-} t_pacman;
-
-typedef struct st_ghost
-{
-    t_pos pos; /* ghost position */
-    t_direction dir; /* ghost current direction */
-    t_pos starget; /* ghost scatter preferred corner */
-    t_ghostmode mode; /* chase, scatter, afraid or dead */
-    int in_cage; /* 1 if ghost is in the starting cage */
-} t_ghost;
-
-typedef struct st_pacdata
-{
-    char lab[LABL][LABC]; /* the labyrinth map */
-    t_pacman pacman; /* pacman data */
-    t_ghost ghost[4]; /* ghost[blinky], ghost[pinky], ghost[inky], ghost[clyde] */
-} t_game;
+static t_direction last_direction = left; /* Última direção do Pacman para movimento contínuo */
 
 /* ---------------------------------------------------------------------- */
 /* prototypes */
@@ -194,6 +116,7 @@ t_pos ghost_chase_target(t_game *g, int gi);
 void move_ghost_frightened(t_game *g, int gi);
 void move_ghosts(t_game *g);
 void move_pacman(t_game *g, int direction);
+void move_pacman_continuous(t_game *g); /* Nova função para movimento contínuo */
 int check_collision(t_game *g);
 void update_score(t_game *g);
 int check_victory(t_game *g);
@@ -239,6 +162,7 @@ void reset_positions_after_collision(t_game *g)
     g->pacman.pos.y = 17;
     g->pacman.pos.x = 10;
     g->pacman.dir = left;
+    last_direction = left;
 
     /* Reset ghosts positions and modes */
     int f;
@@ -265,7 +189,6 @@ void reset_positions_after_collision(t_game *g)
         }
         g->ghost[f].dir = left;
         g->ghost[f].mode = chase;
-        g->ghost[f].in_cage = 1;
     }
 
     /* Restore lab state */
@@ -275,6 +198,42 @@ void reset_positions_after_collision(t_game *g)
         {
             g->lab[y][x] = saved_lab[y][x];
         }
+    }
+}
+
+/* ---------------------------------------------------------------------- */
+/**
+ * @brief Move Pacman continuously in the last direction
+ */
+void move_pacman_continuous(t_game *g)
+{
+    int ny, nx;
+
+    ny = g->pacman.pos.y;
+    nx = g->pacman.pos.x;
+
+    /* Move based on last direction */
+    switch(last_direction)
+    {
+        case up:
+            ny--;
+            break;
+        case down:
+            ny++;
+            break;
+        case left:
+            nx--;
+            break;
+        case right:
+            nx++;
+            break;
+    }
+
+    if(!is_wall(g->lab, ny, nx))
+    {
+        g->pacman.pos.y = ny;
+        g->pacman.pos.x = nx;
+        g->pacman.dir = last_direction;
     }
 }
 
@@ -420,6 +379,7 @@ int main(int argc, char *argv[])
 
     /* Initialize game after menu selection */
     g = upecman_init();
+    last_direction = left; /* Inicializa com direção para esquerda */
 
     /* Clear screen and print centered lab */
     clear();
@@ -469,6 +429,7 @@ int main(int argc, char *argv[])
             else if(pause_choice == 2) /* Reiniciar o jogo */
             {
                 g = upecman_init();
+                last_direction = left;
                 clear();
                 printlab(g);
                 mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -486,8 +447,14 @@ int main(int argc, char *argv[])
         }
         else
         {
-            /* Move pacman based on input */
-            move_pacman(&g, kin);
+            /* Process input for Pacman direction */
+            if(kin == KEY_UP || kin == KEY_DOWN || kin == KEY_LEFT || kin == KEY_RIGHT)
+            {
+                move_pacman(&g, kin);
+            }
+
+            /* Move Pacman continuously every frame */
+            move_pacman_continuous(&g);
 
             /* Check for victory */
             if(check_victory(&g))
@@ -496,6 +463,7 @@ int main(int argc, char *argv[])
                 if(victory_choice == 'r')
                 {
                     g = upecman_init();
+                    last_direction = left;
                     clear();
                     printlab(g);
                     mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -518,29 +486,11 @@ int main(int argc, char *argv[])
 
             if(frame_count >= 10)
             {
-                /* Release ghosts from cage gradually */
-                if(ghost_release_timer > 50 && g.ghost[blinky].in_cage)
-                {
-                    move_ghost_from_cage(&g, blinky);
-                }
-                if(ghost_release_timer > 100 && g.ghost[pinky].in_cage)
-                {
-                    move_ghost_from_cage(&g, pinky);
-                }
-                if(ghost_release_timer > 150 && g.ghost[inky].in_cage)
-                {
-                    move_ghost_from_cage(&g, inky);
-                }
-                if(ghost_release_timer > 200 && g.ghost[clyde].in_cage)
-                {
-                    move_ghost_from_cage(&g, clyde);
-                }
-
                 move_ghosts(&g);
                 frame_count = 0;
             }
 
-            /* Check collisions - CORRIGIDO */
+            /* Check collisions */
             if(check_collision(&g))
             {
                 /* COLISÃO FATAL - Pacman perde uma vida */
@@ -563,6 +513,7 @@ int main(int argc, char *argv[])
                     if(game_over_choice == 'r')
                     {
                         g = upecman_init();
+                        last_direction = left;
                         clear();
                         printlab(g);
                         mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -609,7 +560,7 @@ int main(int argc, char *argv[])
         }
 
         /* Small delay to control game speed */
-        napms(50);
+        napms(100); /* Aumentado para melhor controle do movimento contínuo */
     }
 
     endwin();
@@ -745,7 +696,7 @@ void mostra_tutorial_game(void)
         mvprintw(tutorial_start_y, 5, "Tutorial do Upecman");
         mvprintw(tutorial_start_y + 2, 5, "Objetivo: Coma todos os pontos no labirinto sem ser pego pelos fantasmas");
         mvprintw(tutorial_start_y + 4, 5, "Controles:");
-        mvprintw(tutorial_start_y + 5, 5, " - Setas: Mover o Pacman");
+        mvprintw(tutorial_start_y + 5, 5, " - Setas: Mover o Pacman (movimento contínuo)");
         mvprintw(tutorial_start_y + 6, 5, " - P ou Espaco: Pausar o Jogo");
         mvprintw(tutorial_start_y + 8, 5, "Pontos:");
         mvprintw(tutorial_start_y + 9, 5, " - Pontos normais: 10 pontos cada");
@@ -901,7 +852,7 @@ int mostra_vitoria(t_game g)
     int victory_start_y, victory_start_x;
 
     getmaxyx(stdscr, max_y, max_x);
-    sprintf(pontos_str, "PONTUAÇÃO FINAL: %d", g.pacman.score);
+    sprintf(pontos_str, "PONTUACAO FINAL: %d", g.pacman.score);
 
     victory_start_y = max_y / 2 - 3;
     victory_start_x = max_x / 2 - 20;
@@ -913,7 +864,7 @@ int mostra_vitoria(t_game g)
         clear();
 
         mvprintw(victory_start_y, victory_start_x + 20, "VITORIA!");
-        mvprintw(victory_start_y + 1, victory_start_x + 10, "Parabens! Você comeu todos os pontos!");
+        mvprintw(victory_start_y + 1, victory_start_x + 10, "Parabens! Voce comeu todos os pontos!");
         mvprintw(victory_start_y + 2, victory_start_x + 15, "%s", pontos_str);
         mvprintw(victory_start_y + 4, victory_start_x, "Pressione R para jogar novamente");
         mvprintw(victory_start_y + 5, victory_start_x, "Pressione Q para sair do jogo");
@@ -977,43 +928,41 @@ t_game upecman_init(void)
         strcpy(g.lab[y], labmodel[y]);
     }
 
+    /* Posição inicial do Pacman (@ no mapa) */
     g.pacman.pos.y = 17;
     g.pacman.pos.x = 10;
     g.pacman.dir = left;
     g.pacman.life = 3;
     g.pacman.score = 0;
 
+    /* Posições iniciais dos fantasmas (B, P, I, C no mapa) */
     for(f = blinky; f <= clyde; f++)
     {
         switch(f)
         {
             case blinky:
-                g.ghost[f].pos.y = 9;
+                g.ghost[f].pos.y = 7;
                 g.ghost[f].pos.x = 9;
                 g.ghost[f].starget.y = 1;
                 g.ghost[f].starget.x = 1;
-                g.ghost[f].in_cage = 1;
                 break;
             case pinky:
-                g.ghost[f].pos.y = 10;
-                g.ghost[f].pos.x = 9;
+                g.ghost[f].pos.y = 9;
+                g.ghost[f].pos.x = 11;
                 g.ghost[f].starget.y = 1;
                 g.ghost[f].starget.x = LABC - 2;
-                g.ghost[f].in_cage = 1;
                 break;
             case inky:
                 g.ghost[f].pos.y = 10;
-                g.ghost[f].pos.x = 10;
+                g.ghost[f].pos.x = 11;
                 g.ghost[f].starget.y = LABL - 2;
                 g.ghost[f].starget.x = LABC - 2;
-                g.ghost[f].in_cage = 1;
                 break;
             case clyde:
-                g.ghost[f].pos.y = 9;
-                g.ghost[f].pos.x = 10;
+                g.ghost[f].pos.y = 11;
+                g.ghost[f].pos.x = 11;
                 g.ghost[f].starget.y = LABL - 2;
                 g.ghost[f].starget.x = 1;
-                g.ghost[f].in_cage = 1;
                 break;
         }
         g.ghost[f].dir = left;
@@ -1043,14 +992,20 @@ void printlab(t_game g)
 
     clear();
 
+    /* Primeiro desenha o labirinto centralizado */
     for(y = 0; y < LABL; y++)
     {
         for(x = 0; x < LABC; x++)
         {
             char c = g.lab[y][x];
+            /* Substitui caracteres especiais por espaços ou paredes */
             if(c == '#' || c == '.' || c == 'o' || c == ' ')
             {
                 mvaddch(start_y + y, start_x + x, c);
+            }
+            else if(c == '-' || c == '|')
+            {
+                mvaddch(start_y + y, start_x + x, ' '); /* Remove as barras da gaiola */
             }
             else
             {
@@ -1059,34 +1014,33 @@ void printlab(t_game g)
         }
     }
 
+    /* Depois desenha os fantasmas centralizados */
     for(f = blinky; f <= clyde; f++)
     {
-        if(g.ghost[f].in_cage)
+        if(g.ghost[f].mode == afraid)
         {
-            attron(COLOR_PAIR(0) | A_BOLD);
-            mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'G');
-            attroff(COLOR_PAIR(0) | A_BOLD);
-        }
-        else if(g.ghost[f].mode == afraid)
-        {
+            /* Fantasma azul quando vulnerável */
             attron(COLOR_PAIR(5) | A_BOLD);
-            mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'G');
+            mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'I');
             attroff(COLOR_PAIR(5) | A_BOLD);
         }
         else if(g.ghost[f].mode == dead)
         {
+            /* Fantasma branco quando morto */
             attron(A_BOLD);
             mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'X');
             attroff(A_BOLD);
         }
         else
         {
+            /* Fantasma colorido normal */
             attron(COLOR_PAIR(f + 1) | A_BOLD);
-            mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'G');
+            mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'I');
             attroff(COLOR_PAIR(f + 1) | A_BOLD);
         }
     }
 
+    /* Finalmente desenha o Pacman centralizado */
     attron(COLOR_PAIR(6) | A_BOLD);
     mvaddch(start_y + g.pacman.pos.y, start_x + g.pacman.pos.x, 'C');
     attroff(COLOR_PAIR(6) | A_BOLD);
@@ -1106,7 +1060,9 @@ int is_wall(char lab[LABL][LABC], int y, int x)
     {
         return 1;
     }
-    return (lab[y][x] == '#');
+    char c = lab[y][x];
+    /* Considera como parede apenas o '#' */
+    return (c == '#');
 }
 
 /**
@@ -1114,14 +1070,8 @@ int is_wall(char lab[LABL][LABC], int y, int x)
  */
 void move_ghost_from_cage(t_game *g, int gi)
 {
-    if(g->ghost[gi].pos.y > 8)
-    {
-        g->ghost[gi].pos.y--;
-    }
-    else
-    {
-        g->ghost[gi].in_cage = 0;
-    }
+    /* No novo mapa, os fantasmas já começam fora da gaiola */
+    return;
 }
 
 /**
@@ -1343,19 +1293,10 @@ void move_ghosts(t_game *g)
     t_ghost *gh;
     t_pos t;
     t_direction nd;
-    t_pos home;
-
-    home.y = 10;
-    home.x = 10;
 
     for(i = 0; i < 4; i++)
     {
         gh = &g->ghost[i];
-
-        if(gh->in_cage)
-        {
-            continue;
-        }
 
         if(gh->mode == afraid)
         {
@@ -1381,12 +1322,31 @@ void move_ghosts(t_game *g)
 
         if(gh->mode == dead)
         {
-            nd = best_direction_to_target(g, i, home.y, home.x);
+            /* No novo mapa, fantasmas mortos voltam para posições iniciais */
+            switch(i)
+            {
+                case blinky:
+                    nd = best_direction_to_target(g, i, 7, 9);
+                    break;
+                case pinky:
+                    nd = best_direction_to_target(g, i, 9, 11);
+                    break;
+                case inky:
+                    nd = best_direction_to_target(g, i, 10, 11);
+                    break;
+                case clyde:
+                    nd = best_direction_to_target(g, i, 11, 11);
+                    break;
+            }
             try_move_ghost(g, i, nd);
-            if(gh->pos.y == home.y && gh->pos.x == home.x)
+
+            /* Se o fantasma morto chegou em casa, revive */
+            if((i == blinky && gh->pos.y == 7 && gh->pos.x == 9) ||
+               (i == pinky && gh->pos.y == 9 && gh->pos.x == 11) ||
+               (i == inky && gh->pos.y == 10 && gh->pos.x == 11) ||
+               (i == clyde && gh->pos.y == 11 && gh->pos.x == 11))
             {
                 gh->mode = chase;
-                gh->in_cage = 1;
             }
             continue;
         }
@@ -1394,43 +1354,29 @@ void move_ghosts(t_game *g)
 }
 
 /**
- * @brief Move o pacman baseado na direcao
+ * @brief Move o pacman baseado na direcao (apenas muda a direção)
  */
 void move_pacman(t_game *g, int direction)
 {
-    int ny;
-    int nx;
-
-    ny = g->pacman.pos.y;
-    nx = g->pacman.pos.x;
-
+    /* Apenas atualiza a última direção para movimento contínuo */
     switch(direction)
     {
         case KEY_UP:
-            ny--;
-            g->pacman.dir = up;
+            last_direction = up;
             break;
         case KEY_DOWN:
-            ny++;
-            g->pacman.dir = down;
+            last_direction = down;
             break;
         case KEY_LEFT:
-            nx--;
-            g->pacman.dir = left;
+            last_direction = left;
             break;
         case KEY_RIGHT:
-            nx++;
-            g->pacman.dir = right;
+            last_direction = right;
             break;
         default:
             return;
     }
-
-    if(!is_wall(g->lab, ny, nx))
-    {
-        g->pacman.pos.y = ny;
-        g->pacman.pos.x = nx;
-    }
+    g->pacman.dir = last_direction;
 }
 
 /**
@@ -1442,22 +1388,19 @@ int check_collision(t_game *g)
 
     for(i = 0; i < 4; i++)
     {
-        if(g->ghost[i].in_cage)
-        {
-            continue;
-        }
-
         if(g->pacman.pos.y == g->ghost[i].pos.y &&
            g->pacman.pos.x == g->ghost[i].pos.x)
         {
             if(g->ghost[i].mode == afraid)
             {
+                /* Pacman come fantasma */
                 g->ghost[i].mode = dead;
                 g->pacman.score += 200;
                 return 0;
             }
             else if(g->ghost[i].mode != dead)
             {
+                /* Fantasma pega pacman - PERDE VIDA */
                 return 1;
             }
         }
@@ -1484,9 +1427,10 @@ void update_score(t_game *g)
         case 'o':
             g->pacman.score += PONTOS_PILULA;
             g->lab[g->pacman.pos.y][g->pacman.pos.x] = ' ';
+            /* Ativar modo afraid nos fantasmas */
             for(i = 0; i < 4; i++)
             {
-                if(g->ghost[i].mode != dead && !g->ghost[i].in_cage)
+                if(g->ghost[i].mode != dead)
                 {
                     g->ghost[i].mode = afraid;
                 }
@@ -1509,11 +1453,11 @@ int check_victory(t_game *g)
         {
             if(g->lab[y][x] == '.' || g->lab[y][x] == 'o')
             {
-                return 0;
+                return 0; /* Ainda tem pontos */
             }
         }
     }
-    return 1;
+    return 1; /* Todos os pontos foram comidos */
 }
 
 /* ---------------------------------------------------------------------- */

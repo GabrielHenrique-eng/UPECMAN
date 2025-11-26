@@ -116,6 +116,9 @@ The ghosts will chase Pacman for 20 seconds, then scatter for 7 seconds; and rep
 
 "Pac-Man is an amazing example of seemingly-complex behavior arising from only a few cleverly-designed rules, with the result being a deep and challenging game that players still strive to master, 30 years after its release." (by Chad Birch, 2010)
 
+# code to compile the game
+gcc upecman.c -o upecman.x -lncurses -DDEBUG=1
+
 # References:
 
 * https://www.google.com/doodles/30th-anniversary-of-pac-man

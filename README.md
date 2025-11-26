@@ -1,5 +1,7 @@
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/oKceQg_5)
 # UPEcman - a UPE pacman
+## This project was taught by Professor Dr. Ruben Carlo Benante. For more information, visit: https://hydra.beco.cc
+
 
 Pacman with ncurses library
 
@@ -113,6 +115,9 @@ The ghosts will chase Pacman for 20 seconds, then scatter for 7 seconds; and rep
 ## Amazing Pacman
 
 "Pac-Man is an amazing example of seemingly-complex behavior arising from only a few cleverly-designed rules, with the result being a deep and challenging game that players still strive to master, 30 years after its release." (by Chad Birch, 2010)
+
+# code to compile the game
+gcc upecman.c -o upecman.x -lncurses -DDEBUG=1
 
 # References:
 

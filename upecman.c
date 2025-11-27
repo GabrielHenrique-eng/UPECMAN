@@ -88,13 +88,21 @@
 #define PONTOS_CEREJA 500
 #define FANTASMA_MULTIPLIER 200
 #define BONUS_QUATRO_FANTASMAS 12000
+#define POWERUP_DURATION 10000 /* 10 segundos em milissegundos */
+#define SCATTER_DURATION 7000  /* 7 segundos em modo dispersão */
+#define CHASE_DURATION 20000   /* 20 segundos em modo perseguição */
 
 /* ---------------------------------------------------------------------- */
 /* globals */
 
+static int local_verb = 0; /**< verbose level, global within the file */
 static int start_y = 0; /**< starting y position for centering */
 static int start_x = 0; /**< starting x position for centering */
 static t_direction last_direction = left; /* Última direção do Pacman para movimento contínuo */
+static clock_t powerup_start_time = 0; /* Tempo de início do power-up */
+static int powerup_active = 0; /* Flag indicando se o power-up está ativo */
+static clock_t mode_start_time = 0; /* Tempo de início do modo atual */
+static t_ghostmode current_ghost_mode = scatter; /* Modo atual dos fantasmas */
 
 /* ---------------------------------------------------------------------- */
 /* prototypes */
@@ -123,6 +131,9 @@ int check_victory(t_game *g);
 void move_ghost_from_cage(t_game *g, int gi);
 void calculate_center(void);
 void reset_positions_after_collision(t_game *g);
+void update_ghost_modes(void); /* Nova função para atualizar modos */
+int is_powerup_active(void); /* Verifica se o power-up está ativo */
+void activate_powerup(void); /* Ativa o power-up */
 
 /* ---------------------------------------------------------------------- */
 /**
@@ -138,6 +149,57 @@ void calculate_center(void)
     /* Ensure positive values */
     if(start_y < 0) start_y = 0;
     if(start_x < 0) start_x = 0;
+}
+
+/* ---------------------------------------------------------------------- */
+/**
+ * @brief Verifica se o power-up está ativo
+ */
+int is_powerup_active(void)
+{
+    if (!powerup_active) return 0;
+
+    clock_t current_time = clock();
+    double elapsed_ms = ((double)(current_time - powerup_start_time) / CLOCKS_PER_SEC) * 1000;
+
+    if (elapsed_ms >= POWERUP_DURATION)
+    {
+        powerup_active = 0;
+        return 0;
+    }
+
+    return 1;
+}
+
+/* ---------------------------------------------------------------------- */
+/**
+ * @brief Ativa o power-up
+ */
+void activate_powerup(void)
+{
+    powerup_active = 1;
+    powerup_start_time = clock();
+}
+
+/* ---------------------------------------------------------------------- */
+/**
+ * @brief Atualiza os modos dos fantasmas (scatter/chase)
+ */
+void update_ghost_modes(void)
+{
+    clock_t current_time = clock();
+    double elapsed_ms = ((double)(current_time - mode_start_time) / CLOCKS_PER_SEC) * 1000;
+
+    if (current_ghost_mode == scatter && elapsed_ms >= SCATTER_DURATION)
+    {
+        current_ghost_mode = chase;
+        mode_start_time = clock();
+    }
+    else if (current_ghost_mode == chase && elapsed_ms >= CHASE_DURATION)
+    {
+        current_ghost_mode = scatter;
+        mode_start_time = clock();
+    }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -171,24 +233,24 @@ void reset_positions_after_collision(t_game *g)
         switch(f)
         {
             case blinky:
-                g->ghost[f].pos.y = 9;
+                g->ghost[f].pos.y = 7;
                 g->ghost[f].pos.x = 9;
                 break;
             case pinky:
-                g->ghost[f].pos.y = 10;
-                g->ghost[f].pos.x = 9;
+                g->ghost[f].pos.y = 9;
+                g->ghost[f].pos.x = 11;
                 break;
             case inky:
                 g->ghost[f].pos.y = 10;
-                g->ghost[f].pos.x = 10;
+                g->ghost[f].pos.x = 11;
                 break;
             case clyde:
-                g->ghost[f].pos.y = 9;
-                g->ghost[f].pos.x = 10;
+                g->ghost[f].pos.y = 11;
+                g->ghost[f].pos.x = 11;
                 break;
         }
         g->ghost[f].dir = left;
-        g->ghost[f].mode = chase;
+        g->ghost[f].mode = current_ghost_mode;
     }
 
     /* Restore lab state */
@@ -229,7 +291,8 @@ void move_pacman_continuous(t_game *g)
             break;
     }
 
-    if(!is_wall(g->lab, ny, nx))
+    /* Verifica se a nova posição é válida (não é parede e está dentro dos limites) */
+    if(!is_wall(g->lab, ny, nx) && ny >= 0 && ny < LABL && nx >= 0 && nx < LABC)
     {
         g->pacman.pos.y = ny;
         g->pacman.pos.x = nx;
@@ -347,13 +410,13 @@ int main(int argc, char *argv[])
     timeout(100);
     start_color();
 
-    /* Initialize colors */
-    init_pair(1, COLOR_RED, COLOR_BLACK);
-    init_pair(2, COLOR_MAGENTA, COLOR_BLACK);
-    init_pair(3, COLOR_CYAN, COLOR_BLACK);
-    init_pair(4, COLOR_GREEN, COLOR_BLACK);
-    init_pair(5, COLOR_BLUE, COLOR_BLACK);
-    init_pair(6, COLOR_YELLOW, COLOR_BLACK);
+    /* Inicializa cores com as novas cores para os fantasmas */
+    init_pair(1, COLOR_RED, COLOR_BLACK);        /* Blinky - Vermelho */
+    init_pair(2, COLOR_MAGENTA, COLOR_BLACK);    /* Pinky - Rosa */
+    init_pair(3, COLOR_CYAN, COLOR_BLACK);       /* Inky - Azul claro */
+    init_pair(4, COLOR_YELLOW, COLOR_BLACK);     /* Clyde - Amarelo (laranja não disponível, usando amarelo) */
+    init_pair(5, COLOR_BLUE, COLOR_BLACK);       /* Fantasmas vulneráveis - Azul */
+    init_pair(6, COLOR_YELLOW, COLOR_BLACK);     /* Pacman - Amarelo */
 
     /* Calculate center position */
     calculate_center();
@@ -380,6 +443,7 @@ int main(int argc, char *argv[])
     /* Initialize game after menu selection */
     g = upecman_init();
     last_direction = left; /* Inicializa com direção para esquerda */
+    mode_start_time = clock(); /* Inicializa o timer dos modos */
 
     /* Clear screen and print centered lab */
     clear();
@@ -430,6 +494,7 @@ int main(int argc, char *argv[])
             {
                 g = upecman_init();
                 last_direction = left;
+                mode_start_time = clock();
                 clear();
                 printlab(g);
                 mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -464,6 +529,7 @@ int main(int argc, char *argv[])
                 {
                     g = upecman_init();
                     last_direction = left;
+                    mode_start_time = clock();
                     clear();
                     printlab(g);
                     mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -486,6 +552,9 @@ int main(int argc, char *argv[])
 
             if(frame_count >= 10)
             {
+                /* Atualiza os modos dos fantasmas (scatter/chase) */
+                update_ghost_modes();
+
                 move_ghosts(&g);
                 frame_count = 0;
             }
@@ -514,6 +583,7 @@ int main(int argc, char *argv[])
                     {
                         g = upecman_init();
                         last_direction = left;
+                        mode_start_time = clock();
                         clear();
                         printlab(g);
                         mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -555,6 +625,16 @@ int main(int argc, char *argv[])
             /* Display score and lives (centered below the maze) */
             mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
             mvprintw(start_y + LABL + 2, start_x, "Lives: %d", g.pacman.life);
+
+            /* Mostra timer do power-up se estiver ativo */
+            if(is_powerup_active())
+            {
+                clock_t current_time = clock();
+                double elapsed_ms = ((double)(current_time - powerup_start_time) / CLOCKS_PER_SEC) * 1000;
+                int remaining = (POWERUP_DURATION - (int)elapsed_ms) / 1000;
+                mvprintw(start_y + LABL + 4, start_x, "Power-up: %d seconds", remaining + 1);
+            }
+
             mvprintw(start_y + LABL + 3, start_x, "Use arrow keys to move, 'p' to pause");
             refresh();
         }
@@ -700,12 +780,16 @@ void mostra_tutorial_game(void)
         mvprintw(tutorial_start_y + 6, 5, " - P ou Espaco: Pausar o Jogo");
         mvprintw(tutorial_start_y + 8, 5, "Pontos:");
         mvprintw(tutorial_start_y + 9, 5, " - Pontos normais: 10 pontos cada");
-        mvprintw(tutorial_start_y + 10, 5, " - Bolinhas grandes: Fazem os fantasmas ficarem azuis e vulneraveis");
+        mvprintw(tutorial_start_y + 10, 5, " - Bolinhas grandes: 50 pontos + 10 segundos de power-up");
         mvprintw(tutorial_start_y + 12, 5, "Fantasmas:");
-        mvprintw(tutorial_start_y + 13, 5, " - Evite os fantasmas vermelhos, rosa, ciano e verde.");
-        mvprintw(tutorial_start_y + 14, 5, " - Quando azuis, coma-os para pontos extras");
-        mvprintw(tutorial_start_y + 16, 5, "Vidas: Voce tem 3 vidas. Perde uma ao ser pego por um fantasma");
-        mvprintw(tutorial_start_y + 18, 5, "Pressione qualquer tecla para voltar ao menu inicial.");
+        mvprintw(tutorial_start_y + 13, 5, " - Blinky (B): Vermelho - Persegue diretamente");
+        mvprintw(tutorial_start_y + 14, 5, " - Pinky (P): Rosa - Tenta interceptar à frente");
+        mvprintw(tutorial_start_y + 15, 5, " - Inky (I): Azul claro - Comportamento imprevisível");
+        mvprintw(tutorial_start_y + 16, 5, " - Clyde (C): Laranja - Foge quando perto do Pacman");
+        mvprintw(tutorial_start_y + 18, 5, "Power-up: Fantasmas ficam azuis e vulneráveis por 10 segundos");
+        mvprintw(tutorial_start_y + 19, 5, "Modos: Dispersão (7s) - Perseguição (20s)");
+        mvprintw(tutorial_start_y + 21, 5, "Vidas: Voce tem 3 vidas. Perde uma ao ser pego por um fantasma");
+        mvprintw(tutorial_start_y + 23, 5, "Pressione qualquer tecla para voltar ao menu inicial.");
 
         entrada = getch();
         if(entrada != ERR)
@@ -966,9 +1050,10 @@ t_game upecman_init(void)
                 break;
         }
         g.ghost[f].dir = left;
-        g.ghost[f].mode = chase;
+        g.ghost[f].mode = current_ghost_mode;
     }
 
+    powerup_active = 0;
     return g;
 }
 
@@ -1014,12 +1099,12 @@ void printlab(t_game g)
         }
     }
 
-    /* Depois desenha os fantasmas centralizados */
+    /* Desenha os fantasmas com as novas cores */
     for(f = blinky; f <= clyde; f++)
     {
-        if(g.ghost[f].mode == afraid)
+        if(is_powerup_active() && g.ghost[f].mode != dead)
         {
-            /* Fantasma azul quando vulnerável */
+            /* Fantasma azul quando vulnerável durante power-up */
             attron(COLOR_PAIR(5) | A_BOLD);
             mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'I');
             attroff(COLOR_PAIR(5) | A_BOLD);
@@ -1033,7 +1118,7 @@ void printlab(t_game g)
         }
         else
         {
-            /* Fantasma colorido normal */
+            /* Fantasmas com cores específicas */
             attron(COLOR_PAIR(f + 1) | A_BOLD);
             mvaddch(start_y + g.ghost[f].pos.y, start_x + g.ghost[f].pos.x, 'I');
             attroff(COLOR_PAIR(f + 1) | A_BOLD);
@@ -1196,15 +1281,18 @@ t_pos ghost_chase_target(t_game *g, int gi)
     switch(gi)
     {
         case blinky:
+            /* Blinky: persegue diretamente o Pacman */
             t = g->pacman.pos;
             break;
 
         case pinky:
+            /* Pinky: tenta interceptar 4 posições à frente do Pacman */
             t = g->pacman.pos;
             switch(g->pacman.dir)
             {
                 case up:
                     t.y -= 4;
+                    t.x -= 4; /* Pequeno ajuste para melhor interceptação */
                     break;
                 case down:
                     t.y += 4;
@@ -1219,30 +1307,38 @@ t_pos ghost_chase_target(t_game *g, int gi)
             break;
 
         case inky:
-            t = g->pacman.pos;
-            switch(g->pacman.dir)
+            /* Inky: comportamento imprevisível baseado na posição do Blinky */
             {
-                case up:
-                    t.y -= 2;
-                    break;
-                case down:
-                    t.y += 2;
-                    break;
-                case left:
-                    t.x -= 2;
-                    break;
-                case right:
-                    t.x += 2;
-                    break;
+                t_pos blinky_pos = g->ghost[blinky].pos;
+                t = g->pacman.pos;
+                switch(g->pacman.dir)
+                {
+                    case up:
+                        t.y -= 2;
+                        break;
+                    case down:
+                        t.y += 2;
+                        break;
+                    case left:
+                        t.x -= 2;
+                        break;
+                    case right:
+                        t.x += 2;
+                        break;
+                }
+                /* Fórmula do Inky: dobra o vetor do Pacman e subtrai a posição do Blinky */
+                t.y = 2 * t.y - blinky_pos.y;
+                t.x = 2 * t.x - blinky_pos.x;
             }
             break;
 
          case clyde:
+            /* Clyde: foge para o canto quando muito perto do Pacman */
             dy = g->pacman.pos.y - g->ghost[clyde].pos.y;
             dx = g->pacman.pos.x - g->ghost[clyde].pos.x;
             dist2 = dy*dy + dx*dx;
 
-            if(dist2 < 64)
+            if(dist2 < 64) /* 8*8 = 64 */
             {
                 t.y = LABL - 2;
                 t.x = 1;
@@ -1254,6 +1350,7 @@ t_pos ghost_chase_target(t_game *g, int gi)
             break;
     }
 
+    /* Garante que o alvo está dentro dos limites do labirinto */
     if(t.y < 0)
     {
         t.y = 0;
@@ -1275,7 +1372,7 @@ t_pos ghost_chase_target(t_game *g, int gi)
 }
 
 /**
- * @brief Movimento frightened (azul)
+ * @brief Movimento frightened (azul) durante power-up
  */
 void move_ghost_frightened(t_game *g, int gi)
 {
@@ -1298,20 +1395,14 @@ void move_ghosts(t_game *g)
     {
         gh = &g->ghost[i];
 
-        if(gh->mode == afraid)
+        /* Durante power-up, todos os fantasmas ficam com medo */
+        if(is_powerup_active() && gh->mode != dead)
         {
             move_ghost_frightened(g, i);
             continue;
         }
 
-        if(gh->mode == chase)
-        {
-            t = ghost_chase_target(g, i);
-            nd = best_direction_to_target(g, i, t.y, t.x);
-            try_move_ghost(g, i, nd);
-            continue;
-        }
-
+        /* Modo scatter: fantasmas voltam para seus cantos */
         if(gh->mode == scatter)
         {
             t = gh->starget;
@@ -1320,9 +1411,18 @@ void move_ghosts(t_game *g)
             continue;
         }
 
+        /* Modo chase: perseguição com comportamentos específicos */
+        if(gh->mode == chase)
+        {
+            t = ghost_chase_target(g, i);
+            nd = best_direction_to_target(g, i, t.y, t.x);
+            try_move_ghost(g, i, nd);
+            continue;
+        }
+
+        /* Fantasmas mortos voltam para casa */
         if(gh->mode == dead)
         {
-            /* No novo mapa, fantasmas mortos voltam para posições iniciais */
             switch(i)
             {
                 case blinky:
@@ -1346,7 +1446,7 @@ void move_ghosts(t_game *g)
                (i == inky && gh->pos.y == 10 && gh->pos.x == 11) ||
                (i == clyde && gh->pos.y == 11 && gh->pos.x == 11))
             {
-                gh->mode = chase;
+                gh->mode = current_ghost_mode;
             }
             continue;
         }
@@ -1391,12 +1491,12 @@ int check_collision(t_game *g)
         if(g->pacman.pos.y == g->ghost[i].pos.y &&
            g->pacman.pos.x == g->ghost[i].pos.x)
         {
-            if(g->ghost[i].mode == afraid)
+            /* Durante power-up, Pacman pode comer fantasmas */
+            if(is_powerup_active() && g->ghost[i].mode != dead)
             {
-                /* Pacman come fantasma */
                 g->ghost[i].mode = dead;
                 g->pacman.score += 200;
-                return 0;
+                return 0; /* Não perde vida */
             }
             else if(g->ghost[i].mode != dead)
             {
@@ -1427,14 +1527,8 @@ void update_score(t_game *g)
         case 'o':
             g->pacman.score += PONTOS_PILULA;
             g->lab[g->pacman.pos.y][g->pacman.pos.x] = ' ';
-            /* Ativar modo afraid nos fantasmas */
-            for(i = 0; i < 4; i++)
-            {
-                if(g->ghost[i].mode != dead)
-                {
-                    g->ghost[i].mode = afraid;
-                }
-            }
+            /* Ativa o power-up por 10 segundos */
+            activate_powerup();
             break;
     }
 }

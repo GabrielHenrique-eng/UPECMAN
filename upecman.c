@@ -95,27 +95,41 @@
 /* ---------------------------------------------------------------------- */
 /* globals */
 
-static int local_verb = 0; /**< verbose level, global within the file */
+/* A variável 'verb' já está definida no upecman.h, não redeclarar aqui */
 static int start_y = 0; /**< starting y position for centering */
 static int start_x = 0; /**< starting x position for centering */
 static t_direction last_direction = left; /* Última direção do Pacman para movimento contínuo */
-static clock_t powerup_start_time = 0; /* Tempo de início do power-up */
+static time_t powerup_start_time = 0; /* Tempo de início do power-up (usando time_t) */
 static int powerup_active = 0; /* Flag indicando se o power-up está ativo */
-static clock_t mode_start_time = 0; /* Tempo de início do modo atual */
+static time_t mode_start_time = 0; /* Tempo de início do modo atual (usando time_t) */
 static t_ghostmode current_ghost_mode = scatter; /* Modo atual dos fantasmas */
 
 /* ---------------------------------------------------------------------- */
 /* prototypes */
 
-void help(void); /* print some help */
-void copyr(void); /* print version and copyright information */
-t_game upecman_init(void); /* initialize game variables */
-void printlab(t_game g); /* print the labyrinth */
+/* Funções de Sistema e Utilitárias */
+void help(void);
+void copyr(void);
+void calculate_center(void);
+
+/* Funções de Inicialização */
+t_game upecman_init(void);
+
+/* Funções de Menu e Interface */
 int mostra_menu(void);
 void mostra_tutorial_game(void);
 int mostra_menu_pausa(void);
 int mostra_game_over(t_game g);
 int mostra_vitoria(t_game g);
+
+/* Funções de Renderização */
+void printlab(t_game g);
+
+/* Funções de Movimentação do Pacman */
+void move_pacman(t_game *g, int direction);
+void move_pacman_continuous(t_game *g);
+
+/* Funções de Movimentação dos Fantasmas */
 int is_wall(char lab[LABL][LABC], int y, int x);
 void try_move_ghost(t_game *g, int gi, t_direction d);
 t_direction random_new_direction(void);
@@ -123,216 +137,25 @@ t_direction best_direction_to_target(t_game *g, int gi, int ty, int tx);
 t_pos ghost_chase_target(t_game *g, int gi);
 void move_ghost_frightened(t_game *g, int gi);
 void move_ghosts(t_game *g);
-void move_pacman(t_game *g, int direction);
-void move_pacman_continuous(t_game *g); /* Nova função para movimento contínuo */
+void move_ghost_from_cage(t_game *g, int gi);
+
+/* Funções de Lógica do Jogo */
 int check_collision(t_game *g);
 void update_score(t_game *g);
 int check_victory(t_game *g);
-void move_ghost_from_cage(t_game *g, int gi);
-void calculate_center(void);
 void reset_positions_after_collision(t_game *g);
-void update_ghost_modes(void); /* Nova função para atualizar modos */
-int is_powerup_active(void); /* Verifica se o power-up está ativo */
-void activate_powerup(void); /* Ativa o power-up */
+
+/* Funções de Power-up e Modos */
+void update_ghost_modes(void);
+int is_powerup_active(void);
+void activate_powerup(void);
 
 /* ---------------------------------------------------------------------- */
-/**
- * @brief Calculate center position for the game
- */
-void calculate_center(void)
-{
-    int max_y, max_x;
-    getmaxyx(stdscr, max_y, max_x);
-    start_y = (max_y - LABL) / 2;
-    start_x = (max_x - LABC) / 2;
+/* FUNÇÃO PRINCIPAL */
 
-    /* Ensure positive values */
-    if(start_y < 0) start_y = 0;
-    if(start_x < 0) start_x = 0;
-}
-
-/* ---------------------------------------------------------------------- */
-/**
- * @brief Verifica se o power-up está ativo
- */
-int is_powerup_active(void)
-{
-    if (!powerup_active) return 0;
-
-    clock_t current_time = clock();
-    double elapsed_ms = ((double)(current_time - powerup_start_time) / CLOCKS_PER_SEC) * 1000;
-
-    if (elapsed_ms >= POWERUP_DURATION)
-    {
-        powerup_active = 0;
-        return 0;
-    }
-
-    return 1;
-}
-
-/* ---------------------------------------------------------------------- */
-/**
- * @brief Ativa o power-up
- */
-void activate_powerup(void)
-{
-    powerup_active = 1;
-    powerup_start_time = clock();
-}
-
-/* ---------------------------------------------------------------------- */
-/**
- * @brief Atualiza os modos dos fantasmas (scatter/chase)
- */
-void update_ghost_modes(void)
-{
-    clock_t current_time = clock();
-    double elapsed_ms = ((double)(current_time - mode_start_time) / CLOCKS_PER_SEC) * 1000;
-
-    if (current_ghost_mode == scatter && elapsed_ms >= SCATTER_DURATION)
-    {
-        current_ghost_mode = chase;
-        mode_start_time = clock();
-    }
-    else if (current_ghost_mode == chase && elapsed_ms >= CHASE_DURATION)
-    {
-        current_ghost_mode = scatter;
-        mode_start_time = clock();
-    }
-}
-
-/* ---------------------------------------------------------------------- */
-/**
- * @brief Reset positions after collision without resetting the labirinth
- */
-void reset_positions_after_collision(t_game *g)
-{
-    /* Save current lab state */
-    char saved_lab[LABL][LABC];
-    int y, x;
-
-    for(y = 0; y < LABL; y++)
-    {
-        for(x = 0; x < LABC; x++)
-        {
-            saved_lab[y][x] = g->lab[y][x];
-        }
-    }
-
-    /* Reset pacman position */
-    g->pacman.pos.y = 17;
-    g->pacman.pos.x = 10;
-    g->pacman.dir = left;
-    last_direction = left;
-
-    /* Reset ghosts positions and modes */
-    int f;
-    for(f = blinky; f <= clyde; f++)
-    {
-        switch(f)
-        {
-            case blinky:
-                g->ghost[f].pos.y = 7;
-                g->ghost[f].pos.x = 9;
-                break;
-            case pinky:
-                g->ghost[f].pos.y = 9;
-                g->ghost[f].pos.x = 11;
-                break;
-            case inky:
-                g->ghost[f].pos.y = 10;
-                g->ghost[f].pos.x = 11;
-                break;
-            case clyde:
-                g->ghost[f].pos.y = 11;
-                g->ghost[f].pos.x = 11;
-                break;
-        }
-        g->ghost[f].dir = left;
-        g->ghost[f].mode = current_ghost_mode;
-    }
-
-    /* Restore lab state */
-    for(y = 0; y < LABL; y++)
-    {
-        for(x = 0; x < LABC; x++)
-        {
-            g->lab[y][x] = saved_lab[y][x];
-        }
-    }
-}
-
-/* ---------------------------------------------------------------------- */
-/**
- * @brief Move Pacman continuously in the last direction
- */
-void move_pacman_continuous(t_game *g)
-{
-    int ny, nx;
-
-    ny = g->pacman.pos.y;
-    nx = g->pacman.pos.x;
-
-    /* Move based on last direction */
-    switch(last_direction)
-    {
-        case up:
-            ny--;
-            break;
-        case down:
-            ny++;
-            break;
-        case left:
-            nx--;
-            break;
-        case right:
-            nx++;
-            break;
-    }
-
-    /* Verifica se a nova posição é válida (não é parede e está dentro dos limites) */
-    if(!is_wall(g->lab, ny, nx) && ny >= 0 && ny < LABL && nx >= 0 && nx < LABC)
-    {
-        g->pacman.pos.y = ny;
-        g->pacman.pos.x = nx;
-        g->pacman.dir = last_direction;
-    }
-}
-
-/* ---------------------------------------------------------------------- */
 /**
  * @ingroup GroupUnique
  * @brief This is the main event of the evening
- * @details Ladies and Gentleman... It's tiiiime!
- * Fightiiiiing at the blue corner,
- * he, who has compiled more C code than any other adversary in the history,
- * he, who has developed UNIX and Linux, and is an inspiration to maaany languages
- * and compilers, the GNU C Compiler, GCC!
- * Fightiiiiing at the red corner, the challenger, in his first fight, lacking of any
- * valid experience but angrily, blindly, and no doubtfully, will try to
- * compile this program without errors. He, the student, the apprentice,
- * the developer, beco!!
- *
- * @param[in] argc Argument counter
- * @param[in] argv Argument strings (argument values)
- *
- * @retval 0 If succeed (EXIT_SUCCESS).
- * @retval 1 Or another error code if failed.
- *
- * @par Example
- * @code
- *    $./upecman -h
- * @endcode
- *
- * @warning   Be carefull with...
- * @bug There is a bug with...
- * @todo Need to do...
- * @note You can read more about it at <<a href="http://www.beco.cc">www.beco.cc</a>>
- * @author Ruben Carlo Benante
- * @version 20160529.013231
- * @date 2016-05-29
- *
  */
 int main(int argc, char *argv[])
 {
@@ -443,7 +266,7 @@ int main(int argc, char *argv[])
     /* Initialize game after menu selection */
     g = upecman_init();
     last_direction = left; /* Inicializa com direção para esquerda */
-    mode_start_time = clock(); /* Inicializa o timer dos modos */
+    mode_start_time = time(NULL); /* Inicializa o timer dos modos */
 
     /* Clear screen and print centered lab */
     clear();
@@ -494,7 +317,7 @@ int main(int argc, char *argv[])
             {
                 g = upecman_init();
                 last_direction = left;
-                mode_start_time = clock();
+                mode_start_time = time(NULL);
                 clear();
                 printlab(g);
                 mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -529,7 +352,7 @@ int main(int argc, char *argv[])
                 {
                     g = upecman_init();
                     last_direction = left;
-                    mode_start_time = clock();
+                    mode_start_time = time(NULL);
                     clear();
                     printlab(g);
                     mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -583,7 +406,7 @@ int main(int argc, char *argv[])
                     {
                         g = upecman_init();
                         last_direction = left;
-                        mode_start_time = clock();
+                        mode_start_time = time(NULL);
                         clear();
                         printlab(g);
                         mvprintw(start_y + LABL + 1, start_x, "Score: %d", g.pacman.score);
@@ -629,10 +452,11 @@ int main(int argc, char *argv[])
             /* Mostra timer do power-up se estiver ativo */
             if(is_powerup_active())
             {
-                clock_t current_time = clock();
-                double elapsed_ms = ((double)(current_time - powerup_start_time) / CLOCKS_PER_SEC) * 1000;
+                time_t current_time = time(NULL);
+                double elapsed_ms = difftime(current_time, powerup_start_time) * 1000.0;
                 int remaining = (POWERUP_DURATION - (int)elapsed_ms) / 1000;
-                mvprintw(start_y + LABL + 4, start_x, "Power-up: %d seconds", remaining + 1);
+                if (remaining < 0) remaining = 0;
+                mvprintw(start_y + LABL + 4, start_x, "Power-up: %d seconds", remaining);
             }
 
             mvprintw(start_y + LABL + 3, start_x, "Use arrow keys to move, 'p' to pause");
@@ -648,15 +472,26 @@ int main(int argc, char *argv[])
 }
 
 /* ---------------------------------------------------------------------- */
+/* FUNÇÕES DE SISTEMA E UTILITÁRIAS */
+
+/**
+ * @brief Calculate center position for the game
+ */
+void calculate_center(void)
+{
+    int max_y, max_x;
+    getmaxyx(stdscr, max_y, max_x);
+    start_y = (max_y - LABL) / 2;
+    start_x = (max_x - LABC) / 2;
+
+    /* Ensure positive values */
+    if(start_y < 0) start_y = 0;
+    if(start_x < 0) start_x = 0;
+}
+
 /**
  * @ingroup GroupUnique
  * @brief Prints help information and exit
- * @details Prints help information (usually called by opt -h)
- * @return Void
- * @author Ruben Carlo Benante
- * @version 20160529.013231
- * @date 2016-05-29
- *
  */
 void help(void)
 {
@@ -667,21 +502,96 @@ void help(void)
     printf("\t-h,  --help\n\t\tShow this help.\n");
     printf("\t-c,  --copyright, --version\n\t\tShow version and copyright information.\n");
     printf("\t-v,  --verbose\n\t\tSet verbose level (cumulative).\n");
-    /* add more options here */
     printf("\nExit status:\n\t0 if ok.\n\t1 some error occurred.\n");
     printf("\nTodo:\n\tLong options not implemented yet.\n");
     printf("\nAuthor:\n\tWritten by %s <%s>\n\n", "Ruben Carlo Benante", "rcb@beco.cc");
 }
 
-/*-----------------------------------------------------------------------*/
+/**
+ * @ingroup GroupUnique
+ * @brief Prints version and copyright information and exit
+ */
+void copyr(void)
+{
+    IFDEBUG("copyr()");
+    printf("%s - Version %s\n", "upecman", VERSION);
+    printf("\nCopyright (C) %d %s <%s>, GNU GPL version 3 <http://gnu.org/licenses/gpl.html>. This  is  free  software:  you are free to change and redistribute it. There is NO WARRANTY, to the extent permitted by law. USE IT AS IT IS. The author takes no responsability to any damage this software may inflige in your data.\n\n", 2016, "Ruben Carlo Benante", "rcb@beco.cc");
+    if(verb > 3)
+    {
+        printf("copyr(): Verbose: %d\n", verb);
+    }
+}
+
+/* ---------------------------------------------------------------------- */
+/* FUNÇÕES DE INICIALIZAÇÃO */
+
+/**
+ * @ingroup GroupUnique
+ * @brief This function initializes some operations before start
+ */
+t_game upecman_init(void)
+{
+    IFDEBUG("init()");
+    t_game g;
+    int f;
+    int y;
+
+    for(y = 0; y < LABL; y++)
+    {
+        strcpy(g.lab[y], labmodel[y]);
+    }
+
+    /* Posição inicial do Pacman (@ no mapa) */
+    g.pacman.pos.y = 17;
+    g.pacman.pos.x = 10;
+    g.pacman.dir = left;
+    g.pacman.life = 3;
+    g.pacman.score = 0;
+
+    /* Posições iniciais dos fantasmas (B, P, I, C no mapa) */
+    for(f = blinky; f <= clyde; f++)
+    {
+        switch(f)
+        {
+            case blinky:
+                g.ghost[f].pos.y = 7;
+                g.ghost[f].pos.x = 9;
+                g.ghost[f].starget.y = 1;
+                g.ghost[f].starget.x = 1;
+                break;
+            case pinky:
+                g.ghost[f].pos.y = 9;
+                g.ghost[f].pos.x = 11;
+                g.ghost[f].starget.y = 1;
+                g.ghost[f].starget.x = LABC - 2;
+                break;
+            case inky:
+                g.ghost[f].pos.y = 10;
+                g.ghost[f].pos.x = 11;
+                g.ghost[f].starget.y = LABL - 2;
+                g.ghost[f].starget.x = LABC - 2;
+                break;
+            case clyde:
+                g.ghost[f].pos.y = 11;
+                g.ghost[f].pos.x = 11;
+                g.ghost[f].starget.y = LABL - 2;
+                g.ghost[f].starget.x = 1;
+                break;
+        }
+        g.ghost[f].dir = left;
+        g.ghost[f].mode = current_ghost_mode;
+    }
+
+    powerup_active = 0;
+    return g;
+}
+
+/* ---------------------------------------------------------------------- */
+/* FUNÇÕES DE MENU E INTERFACE */
+
 /**
  * @ingroup GroupUnique
  * @brief Shows the initial menu
- * @details Displays the main menu with options to play, exit, or TUTORIAL
- * @return The chosen option (1 for play, 2 for Exit, 3 for Tutorial)
- * @author Gabriel Henrique Goncalves Da Silva
- * @date 2025-11-21
- * @version 20160529.013231
  */
 int mostra_menu(void)
 {
@@ -749,15 +659,9 @@ int mostra_menu(void)
     }
 }
 
-/* ---------------------------------------------------------------------- */
 /**
  * @ingroup GroupUnique
  * @brief Shows the tutorial screen
- * @details Displays instructions on how to play the game
- * @return Void
- * @author Gabriel Henrique Goncalves Da Silva
- * @version 20160529.013231
- * @date 2025-11-21
  */
 void mostra_tutorial_game(void)
 {
@@ -800,15 +704,9 @@ void mostra_tutorial_game(void)
     }
 }
 
-/* ---------------------------------------------------------------------- */
 /**
  *@ingroup GroupUnique
  *@brief Shows the pause menu
- * @details Displays The pause Menu with options to resume, restart, or exit
- * @return The chosen option ( 1 for Resume, 2 for Restart, 3 for Exit)
- * @author Gabriel Henrique Goncalves da Silva
- * @version 20160529.013231
- * @date 2025-11-22
  */
 int mostra_menu_pausa(void)
 {
@@ -859,16 +757,9 @@ int mostra_menu_pausa(void)
     }
 }
 
-/* ---------------------------------------------------------------------- */
 /**
  * @ingroup GroupUnique
  * @brief Shows the game over screen
- * @details Displays the game over screen with score and options to restart or quit
- * param[in] g The game Strcture containing score
- * @return The chosen option ('r' for restart, 'q' for quit)
- * @author Gabriel Henrique Goncalves Da Silva
- * @version 20160529.013231
- * @date 2025-11-22
  */
 int mostra_game_over(t_game g)
 {
@@ -916,16 +807,9 @@ int mostra_game_over(t_game g)
     }
 }
 
-/* ---------------------------------------------------------------------- */
 /**
  * @ingroup GroupUnique
  * @brief Shows the victory screen
- * @details Displays the victory screen with score and options to restart or quit
- * param[in] g The game Strcture containing score
- * @return The chosen option ('r' for restart, 'q' for quit)
- * @author Assistant
- * @version 20160529.013231
- * @date 2025-11-22
  */
 int mostra_vitoria(t_game g)
 {
@@ -969,104 +853,11 @@ int mostra_vitoria(t_game g)
 }
 
 /* ---------------------------------------------------------------------- */
-/**
- * @ingroup GroupUnique
- * @brief Prints version and copyright information and exit
- * @details Prints version and copyright information (usually called by opt -V)
- * @return Void
- * @author Ruben Carlo Benante
- * @version 20160529.013231
- * @date 2016-05-29
- */
-void copyr(void)
-{
-    IFDEBUG("copyr()");
-    printf("%s - Version %s\n", "upecman", VERSION);
-    printf("\nCopyright (C) %d %s <%s>, GNU GPL version 3 <http://gnu.org/licenses/gpl.html>. This  is  free  software:  you are free to change and redistribute it. There is NO WARRANTY, to the extent permitted by law. USE IT AS IT IS. The author takes no responsability to any damage this software may inflige in your data.\n\n", 2016, "Ruben Carlo Benante", "rcb@beco.cc");
-    if(verb > 3)
-    {
-        printf("copyr(): Verbose: %d\n", verb);
-    }
-}
+/* FUNÇÕES DE RENDERIZAÇÃO */
 
-/* ---------------------------------------------------------------------- */
 /**
  * @ingroup GroupUnique
  * @brief This function initializes some operations before start
- * @details Details to be written
- * @return Void
- * @todo Need to implement it. Its empty now.
- * @author Ruben Carlo Benante
- * @version 20160530.224016
- * @date 2016-05-30
- */
-t_game upecman_init(void)
-{
-    IFDEBUG("init()");
-    t_game g;
-    int f;
-    int y;
-
-    for(y = 0; y < LABL; y++)
-    {
-        strcpy(g.lab[y], labmodel[y]);
-    }
-
-    /* Posição inicial do Pacman (@ no mapa) */
-    g.pacman.pos.y = 17;
-    g.pacman.pos.x = 10;
-    g.pacman.dir = left;
-    g.pacman.life = 3;
-    g.pacman.score = 0;
-
-    /* Posições iniciais dos fantasmas (B, P, I, C no mapa) */
-    for(f = blinky; f <= clyde; f++)
-    {
-        switch(f)
-        {
-            case blinky:
-                g.ghost[f].pos.y = 7;
-                g.ghost[f].pos.x = 9;
-                g.ghost[f].starget.y = 1;
-                g.ghost[f].starget.x = 1;
-                break;
-            case pinky:
-                g.ghost[f].pos.y = 9;
-                g.ghost[f].pos.x = 11;
-                g.ghost[f].starget.y = 1;
-                g.ghost[f].starget.x = LABC - 2;
-                break;
-            case inky:
-                g.ghost[f].pos.y = 10;
-                g.ghost[f].pos.x = 11;
-                g.ghost[f].starget.y = LABL - 2;
-                g.ghost[f].starget.x = LABC - 2;
-                break;
-            case clyde:
-                g.ghost[f].pos.y = 11;
-                g.ghost[f].pos.x = 11;
-                g.ghost[f].starget.y = LABL - 2;
-                g.ghost[f].starget.x = 1;
-                break;
-        }
-        g.ghost[f].dir = left;
-        g.ghost[f].mode = current_ghost_mode;
-    }
-
-    powerup_active = 0;
-    return g;
-}
-
-/* ---------------------------------------------------------------------- */
-/**
- * @ingroup GroupUnique
- * @brief This function initializes some operations before start
- * @details Details to be written
- * @return Void
- * @todo Need to implement it. Its empty now.
- * @author Ruben Carlo Benante
- * @version 20160530.224016
- * @date 2016-05-30
  */
 void printlab(t_game g)
 {
@@ -1134,7 +925,72 @@ void printlab(t_game g)
 }
 
 /* ---------------------------------------------------------------------- */
-/* Game Logic Functions */
+/* FUNÇÕES DE MOVIMENTAÇÃO DO PACMAN */
+
+/**
+ * @brief Move o pacman baseado na direcao (apenas muda a direção)
+ */
+void move_pacman(t_game *g, int direction)
+{
+    /* Apenas atualiza a última direção para movimento contínuo */
+    switch(direction)
+    {
+        case KEY_UP:
+            last_direction = up;
+            break;
+        case KEY_DOWN:
+            last_direction = down;
+            break;
+        case KEY_LEFT:
+            last_direction = left;
+            break;
+        case KEY_RIGHT:
+            last_direction = right;
+            break;
+        default:
+            return;
+    }
+    g->pacman.dir = last_direction;
+}
+
+/**
+ * @brief Move Pacman continuously in the last direction
+ */
+void move_pacman_continuous(t_game *g)
+{
+    int ny, nx;
+
+    ny = g->pacman.pos.y;
+    nx = g->pacman.pos.x;
+
+    /* Move based on last direction */
+    switch(last_direction)
+    {
+        case up:
+            ny--;
+            break;
+        case down:
+            ny++;
+            break;
+        case left:
+            nx--;
+            break;
+        case right:
+            nx++;
+            break;
+    }
+
+    /* Verifica se a nova posição é válida (não é parede e está dentro dos limites) */
+    if(!is_wall(g->lab, ny, nx) && ny >= 0 && ny < LABL && nx >= 0 && nx < LABC)
+    {
+        g->pacman.pos.y = ny;
+        g->pacman.pos.x = nx;
+        g->pacman.dir = last_direction;
+    }
+}
+
+/* ---------------------------------------------------------------------- */
+/* FUNÇÕES DE MOVIMENTAÇÃO DOS FANTASMAS */
 
 /**
  * @brief Verifica se uma posicao e parede
@@ -1453,31 +1309,8 @@ void move_ghosts(t_game *g)
     }
 }
 
-/**
- * @brief Move o pacman baseado na direcao (apenas muda a direção)
- */
-void move_pacman(t_game *g, int direction)
-{
-    /* Apenas atualiza a última direção para movimento contínuo */
-    switch(direction)
-    {
-        case KEY_UP:
-            last_direction = up;
-            break;
-        case KEY_DOWN:
-            last_direction = down;
-            break;
-        case KEY_LEFT:
-            last_direction = left;
-            break;
-        case KEY_RIGHT:
-            last_direction = right;
-            break;
-        default:
-            return;
-    }
-    g->pacman.dir = last_direction;
-}
+/* ---------------------------------------------------------------------- */
+/* FUNÇÕES DE LÓGICA DO JOGO */
 
 /**
  * @brief Verifica colisoes entre pacman e fantasmas
@@ -1553,6 +1386,120 @@ int check_victory(t_game *g)
     }
     return 1; /* Todos os pontos foram comidos */
 }
+
+/**
+ * @brief Reset positions after collision without resetting the labirinth
+ */
+void reset_positions_after_collision(t_game *g)
+{
+    /* Save current lab state */
+    char saved_lab[LABL][LABC];
+    int y, x;
+
+    for(y = 0; y < LABL; y++)
+    {
+        for(x = 0; x < LABC; x++)
+        {
+            saved_lab[y][x] = g->lab[y][x];
+        }
+    }
+
+    /* Reset pacman position */
+    g->pacman.pos.y = 17;
+    g->pacman.pos.x = 10;
+    g->pacman.dir = left;
+    last_direction = left;
+
+    /* Reset ghosts positions and modes */
+    int f;
+    for(f = blinky; f <= clyde; f++)
+    {
+        switch(f)
+        {
+            case blinky:
+                g->ghost[f].pos.y = 7;
+                g->ghost[f].pos.x = 9;
+                break;
+            case pinky:
+                g->ghost[f].pos.y = 9;
+                g->ghost[f].pos.x = 11;
+                break;
+            case inky:
+                g->ghost[f].pos.y = 10;
+                g->ghost[f].pos.x = 11;
+                break;
+            case clyde:
+                g->ghost[f].pos.y = 11;
+                g->ghost[f].pos.x = 11;
+                break;
+        }
+        g->ghost[f].dir = left;
+        g->ghost[f].mode = current_ghost_mode;
+    }
+
+    /* Restore lab state */
+    for(y = 0; y < LABL; y++)
+    {
+        for(x = 0; x < LABC; x++)
+        {
+            g->lab[y][x] = saved_lab[y][x];
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------- */
+/* FUNÇÕES DE POWER-UP E MODOS */
+
+/**
+ * @brief Atualiza os modos dos fantasmas (scatter/chase)
+ */
+void update_ghost_modes(void)
+{
+    time_t current_time = time(NULL);
+    double elapsed_ms = difftime(current_time, mode_start_time) * 1000.0;
+
+    if (current_ghost_mode == scatter && elapsed_ms >= SCATTER_DURATION)
+    {
+        current_ghost_mode = chase;
+        mode_start_time = time(NULL);
+    }
+    else if (current_ghost_mode == chase && elapsed_ms >= CHASE_DURATION)
+    {
+        current_ghost_mode = scatter;
+        mode_start_time = time(NULL);
+    }
+}
+
+/**
+ * @brief Verifica se o power-up está ativo
+ */
+int is_powerup_active(void)
+{
+    if (!powerup_active) return 0;
+
+    time_t current_time = time(NULL);
+    double elapsed_ms = difftime(current_time, powerup_start_time) * 1000.0;
+
+    if (elapsed_ms >= POWERUP_DURATION)
+    {
+        powerup_active = 0;
+        return 0;
+    }
+
+    return 1;
+}
+
+/**
+ * @brief Ativa o power-up
+ */
+void activate_powerup(void)
+{
+    powerup_active = 1;
+    powerup_start_time = time(NULL);
+}
+
+/* ---------------------------------------------------------------------- */
+/* FUNÇÕES DE SOMER-UP E MODOS */
 
 /* ---------------------------------------------------------------------- */
 /* vi: set ai et ts=4 sw=4 tw=0 wm=0 fo=croql : C config for Vim modeline */
